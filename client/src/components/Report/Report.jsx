@@ -7,46 +7,38 @@ const Report = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [fileHeaders, setFileHeaders] = useState([]);
   const [uploadedFilename, setUploadedFilename] = useState('');
-  const [feedbackType, setFeedbackType] = useState('stakeholder'); // New state for feedback type
+  const [feedbackType, setFeedbackType] = useState('stakeholder');
   const [reportType, setReportType] = useState('generalized');
   const [chartUrls, setChartUrls] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
 
   const handleFeedbackTypeChange = (type) => {
     setFeedbackType(type);
-    // Reset other states when feedback type changes
     setFileHeaders([]);
     setUploadedFilename('');
     setUploadStatus(null);
     setChartUrls([]);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleFileUpload = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
+    const files = Array.from(event.target.files);
+    if (files.length === 0) return;
 
     setChartUrls([]);
     setIsUploading(true);
-    setUploadStatus({ type: 'loading', message: 'Uploading file...' });
+    setUploadStatus({ type: 'loading', message: 'Uploading files...' });
 
     try {
-      const validTypes = ['.csv', '.xlsx'];
-      const fileExtension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-      if (!validTypes.includes(fileExtension)) {
-        throw new Error('Please upload a CSV or Excel file');
-      }
-
-      if (file.size > 5 * 1024 * 1024) {
-        throw new Error('File size should be less than 5MB');
-      }
-
       const formData = new FormData();
-      formData.append('file', file);
+      for (let file of files) {
+        const validTypes = ['.csv', '.xlsx'];
+        const fileExtension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+        if (!validTypes.includes(fileExtension)) throw new Error('Only .csv or .xlsx allowed');
+        if (file.size > 5 * 1024 * 1024) throw new Error('Each file must be < 5MB');
+        formData.append('file', file);
+      }
 
-      // --- Upload Request ---
       const uploadResponse = await fetch('http://localhost:5001/upload', {
         method: 'POST',
         body: formData,
@@ -56,52 +48,33 @@ const Report = () => {
         const errorText = await uploadResponse.text();
         throw new Error(`Upload failed (Status: ${uploadResponse.status}): ${errorText}`);
       }
-      
+
       const uploadData = await uploadResponse.json();
-      setUploadedFilename(uploadData.filename);
-
-      // --- Headers Request ---
-      const headersResponse = await fetch(`http://localhost:5001/headers/${uploadData.filename}`);
-      if (!headersResponse.ok) {
-        const errorText = await headersResponse.text();
-        throw new Error(`Failed to get headers (Status: ${headersResponse.status}): ${errorText}`);
-      }
-
-      const headersData = await headersResponse.json();
-      setFileHeaders(headersData.headers);
-      setUploadStatus({ type: 'success', message: 'File uploaded successfully! You can now generate a report or view charts.' });
+      setUploadedFilename(files[0].name);
+      setFileHeaders(['uploaded']); // dummy to enable generate buttons
+      setUploadStatus({ type: 'success', message: 'Files uploaded successfully!' });
 
     } catch (error) {
-      let message = error.message;
-      if (error instanceof SyntaxError) {
-          message = 'Received an invalid response from the server (likely an HTML error page instead of JSON). Please ensure the backend server is running the correct code and check its console for errors.';
-      }
-      setUploadStatus({ type: 'error', message: message });
+      setUploadStatus({ type: 'error', message: error.message });
     } finally {
       setIsUploading(false);
     }
   };
 
-  const handleReportTypeChange = (type) => {
-    setReportType(type);
-  };
-
-  const isValid = fileHeaders.length > 0;
-
   const handleGenerate = async (e) => {
     e.preventDefault();
-    if (!isValid || !fileInputRef.current.files[0]) return;
+    if (!fileInputRef.current.files.length) return;
 
     setIsGenerating(true);
     setChartUrls([]);
-    setUploadStatus({ type: 'loading', message: 'Generating report...' });
+    setUploadStatus({ type: 'loading', message: 'Generating report(s)...' });
 
     try {
       const formData = new FormData();
-      formData.append('file', fileInputRef.current.files[0]);
+      Array.from(fileInputRef.current.files).forEach((file) => formData.append('file', file));
       formData.append('choice', reportType === 'fieldwise' ? "2" : "1");
-      formData.append('feedbackType', feedbackType); // Send feedback type to backend
-      formData.append('uploadedFilename', uploadedFilename.replace(/\.[^/.]+$/, "")); // file name without extension
+      formData.append('feedbackType', feedbackType);
+      formData.append('uploadedFilename', uploadedFilename.replace(/\.[^/.]+$/, ""));
       formData.append('reportType', reportType);
 
       const response = await fetch('http://localhost:5001/generate-report', {
@@ -122,55 +95,49 @@ const Report = () => {
       document.body.appendChild(a);
       a.click();
       a.remove();
-      setUploadStatus({ type: 'success', message: '✅ Report generated and downloaded.' });
+      setUploadStatus({ type: 'success', message: '✅ Reports generated and downloaded.' });
 
     } catch (error) {
-        setUploadStatus({ type: 'error', message: error.message });
+      setUploadStatus({ type: 'error', message: error.message });
     } finally {
-        setIsGenerating(false);
+      setIsGenerating(false);
     }
   };
 
   const handleViewCharts = async (e) => {
     e.preventDefault();
-    if (!isValid || !fileInputRef.current.files[0]) return;
+    if (!fileInputRef.current.files.length) return;
 
     setIsGenerating(true);
     setChartUrls([]);
     setUploadStatus({ type: 'loading', message: 'Generating charts...' });
 
     try {
-        const formData = new FormData();
-        formData.append('file', fileInputRef.current.files[0]);
-        formData.append('choice', reportType === 'fieldwise' ? "2" : "1");
-        formData.append('feedbackType', feedbackType); // Send feedback type to backend
-        formData.append('uploadedFilename', uploadedFilename.replace(/\.[^/.]+$/, "")); // file name without extension
-        formData.append('reportType', reportType);
+      const formData = new FormData();
+      Array.from(fileInputRef.current.files).forEach((file) => formData.append('file', file));
+      formData.append('choice', reportType === 'fieldwise' ? "2" : "1");
+      formData.append('feedbackType', feedbackType);
+      formData.append('uploadedFilename', uploadedFilename.replace(/\.[^/.]+$/, ""));
+      formData.append('reportType', reportType);
 
-        const response = await fetch('http://localhost:5001/generate-charts', {
-            method: 'POST',
-            body: formData,
-        });
+      const response = await fetch('http://localhost:5001/generate-charts', {
+        method: 'POST',
+        body: formData,
+      });
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Failed to generate charts (Status: ${response.status}): ${errorText}`);
-        }
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to generate charts (Status: ${response.status}): ${errorText}`);
+      }
 
-        const data = await response.json();
-        const urls = data.chart_urls; // ✅ this is the correct field name now
-        setChartUrls(urls);
-        setUploadStatus({ type: 'success', message: 'Charts generated successfully!' });
-
+      const data = await response.json();
+      setChartUrls(data.chart_urls);
+      setUploadStatus({ type: 'success', message: 'Charts generated successfully!' });
 
     } catch (error) {
-        let message = error.message;
-        if (error instanceof SyntaxError) {
-            message = 'Received an invalid response from the server (likely an HTML error page instead of JSON). Please ensure the backend server is running the correct code and check its console for errors.';
-        }
-        setUploadStatus({ type: 'error', message: message });
+      setUploadStatus({ type: 'error', message: error.message });
     } finally {
-        setIsGenerating(false);
+      setIsGenerating(false);
     }
   };
 
@@ -181,7 +148,6 @@ const Report = () => {
         <p>Upload your dataset and create insightful reports and visualizations</p>
       </div>
 
-      {/* Step 1: Feedback Type Selection */}
       <div className="step-section">
         <h2>Step 1: Select Feedback Type</h2>
         <div className="feedback-type-selection">
@@ -208,16 +174,15 @@ const Report = () => {
         </div>
       </div>
 
-      {/* Step 2: File Upload */}
       <div className="step-section">
-        <h2>Step 2: Upload Your File</h2>
+        <h2>Step 2: Upload Files</h2>
         <div className="upload-section">
           <button
             className="btn-primary upload-btn"
             onClick={() => fileInputRef.current?.click()}
             disabled={isUploading || isGenerating}
           >
-            {isUploading ? 'Uploading...' : 'Choose File'}
+            {isUploading ? 'Uploading...' : 'Choose Folder'}
           </button>
           <input
             type="file"
@@ -225,20 +190,20 @@ const Report = () => {
             onChange={handleFileUpload}
             accept=".csv,.xlsx"
             style={{ display: 'none' }}
+            multiple
+            webkitdirectory="true"
+            directory="true"
           />
-          <p className="file-types">Supports .csv and .xlsx formats (max 5MB)</p>
+          <p className="file-types">Upload a folder containing .csv/.xlsx files (max 5MB each)</p>
           {uploadStatus && (
             <p className={`upload-status ${uploadStatus.type}`}>
               {uploadStatus.message}
             </p>
           )}
-         {(isUploading || isGenerating) && (
-           <div className="loader"></div>
-         )}
+          {(isUploading || isGenerating) && <div className="loader"></div>}
         </div>
       </div>
 
-      {/* Step 3: Report Type Toggle (Only for Stakeholder Feedback) */}
       {fileHeaders.length > 0 && feedbackType === 'stakeholder' && (
         <div className="step-section">
           <h2>Step 3: Choose Report Type</h2>
@@ -249,7 +214,7 @@ const Report = () => {
                 name="reportType"
                 value="generalized"
                 checked={reportType === 'generalized'}
-                onChange={() => handleReportTypeChange('generalized')}
+                onChange={() => setReportType('generalized')}
               />
               Generalized Report
             </label>
@@ -259,7 +224,7 @@ const Report = () => {
                 name="reportType"
                 value="fieldwise"
                 checked={reportType === 'fieldwise'}
-                onChange={() => handleReportTypeChange('fieldwise')}
+                onChange={() => setReportType('fieldwise')}
               />
               Field-Wise Report
             </label>
@@ -267,37 +232,27 @@ const Report = () => {
         </div>
       )}
 
-      {/* Step 4: Generate (Step number adjusts based on feedback type) */}
-      {fileHeaders.length > 0 && isValid && (
+      {fileHeaders.length > 0 && (
         <div className="step-section">
           <h2>Step {feedbackType === 'stakeholder' ? '4' : '3'}: Generate Output</h2>
           <div className="generate-buttons">
-            <button
-              className="btn-generate"
-              onClick={handleGenerate}
-              disabled={isGenerating}
-            >
+            <button className="btn-generate" onClick={handleGenerate} disabled={isGenerating}>
               Get PDF Report
             </button>
-            <button
-              className="btn-secondary"
-              onClick={handleViewCharts}
-              disabled={isGenerating}
-            >
+            <button className="btn-secondary" onClick={handleViewCharts} disabled={isGenerating}>
               View Charts
             </button>
           </div>
         </div>
       )}
 
-      {/* Step 5: Display Charts (Step number adjusts based on feedback type) */}
       {chartUrls.length > 0 && (
         <div className="step-section">
           <h2>Generated Charts</h2>
           <div className="charts-container">
             {chartUrls.map((url, index) => (
               <div key={index} className="chart-item">
-                <img src={url} alt={`Generated chart ${index + 1}`} />
+                <img src={url} alt={`Chart ${index + 1}`} />
               </div>
             ))}
           </div>
