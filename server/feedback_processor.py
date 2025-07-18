@@ -560,6 +560,7 @@ def process_feedback(file_bytes, filename, choice, feedback_type='stakeholder', 
             df = pd.read_csv(file_bytes)
     except Exception as e:
         raise ValueError(f"Error reading uploaded file: {e}")
+    file_bytes.seek(0)
     df, category_groups, short_labels = _get_data_and_groups(file_bytes, feedback_type)
     output_pdfs = []
     if choice == '1':
